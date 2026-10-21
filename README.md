@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PulsAI Web — Plataforma de Inteligencia Artificial Independiente
 
-## Getting Started
+PulsAI Web es la aplicación de interfaz conversacional y analítica del ecosistema Pulso, inspirada en la agilidad y experiencia de usuario de Grok, pero dotada de una identidad visual propia, refinada y táctica.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🏗️ Arquitectura del Sistema
+
+```
+[ Navegador Web ] (Escritorio / Móvil)
+       │  ▲
+       │  │ SSE (Server-Sent Events: Streaming, Pensamiento analítico, Fuentes)
+       ▼  │
+[ PulsAI Web - Next.js 16 + React 19 ]
+  ├─ API /api/status : Monitor de salud y latencia en vivo
+  ├─ API /api/chat   : Streaming con abort controller y contexto web
+  ├─ API /api/upload : Extracción segura de documentos (TXT, MD, JSON, PDF)
+  └─ Tavily API      : Búsqueda fáctica y verificación en tiempo real
+       │
+       ▼ (Túnel Cloudflare o Red Local)
+[ PulsAI Gateway ] (127.0.0.1:11435)
+  └─ Ollama Engine (127.0.0.1:11434) ─── Modelo: gemma4:e2b
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🚀 Puesta en Marcha
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 1. Iniciar el Gateway en el portátil
+Asegúrate de que Ollama y el gateway local estén ejecutándose en tu equipo:
+```cmd
+cd ..\new-twtr\gateway
+call INICIAR-PULSAI.bat
+```
 
-## Learn More
+### 2. Iniciar PulsAI Web
+En esta carpeta (`PulsAI-web`):
+```cmd
+npm run dev -- -p 3001
+```
+o haz doble clic sobre:
+`start-pulsai-web.bat`
 
-To learn more about Next.js, take a look at the following resources:
+Accede en tu navegador a:
+👉 **http://localhost:3001**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## ⚙️ Variables de Entorno (`.env`)
 
-## Deploy on Vercel
+| Variable | Descripción |
+|---|---|
+| `PULSAI_GATEWAY_TOKEN` | Token Bearer para autorizar las peticiones al gateway local |
+| `PULSAI_GATEWAY_URL` | Dirección del gateway local (`http://127.0.0.1:11435`) |
+| `PULSAI_TUNNEL_URL` | URL pública de Cloudflare Tunnel si se despliega en la nube |
+| `PULSAI_MODEL` | Nombre del modelo (`gemma4:e2b`) |
+| `TAVILY_API_KEY` | Clave para búsqueda fáctica en la web |
+| `BLOB_READ_WRITE_TOKEN` | Auto-descubrimiento dinámico de URL pública de túnel |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🛡️ Características de Seguridad y Rendimiento
+
+1. **Protección de Memoria (RAM 8 GB):** La aplicación no envía archivos binarios pesados al modelo. Extrae texto formateado de hasta 12 KB para no exceder los límites del gateway.
+2. **Streaming Directo:** Emisión progresiva de tokens y razonamiento `<thought>` en tiempo real sin acumular búferes innecesarios.
+3. **Indicador de Desconexión Real:** Si el portátil está apagado o el gateway cerrado, la interfaz muestra el estado exacto sin fingir respuestas ni fallar silenciosamente.
+4. **Detención Inmediata:** Botón de detención con `AbortController` nativo.
