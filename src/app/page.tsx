@@ -337,23 +337,32 @@ export default function PulsAIApp() {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       recognition.lang = "es-ES";
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
+
+      // Guardamos el texto base que el usuario ya tenía antes de comenzar a hablar
+      const baseText = inputText.trim() ? `${inputText.trim()} ` : "";
 
       recognition.onstart = () => {
         setIsRecording(true);
       };
 
       recognition.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+        let finalTranscript = "";
+        let interimTranscript = "";
+
+        for (let i = 0; i < event.results.length; i++) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalTranscript += item[0].transcript;
+          } else {
+            interimTranscript += item[0].transcript;
+          }
         }
-        if (transcript) {
-          setInputText(prev => {
-            const trimmed = prev.trim();
-            return trimmed ? `${trimmed} ${transcript}` : transcript;
-          });
+
+        const speechCombined = (finalTranscript + interimTranscript).trim();
+        if (speechCombined) {
+          setInputText(`${baseText}${speechCombined}`);
         }
       };
 
