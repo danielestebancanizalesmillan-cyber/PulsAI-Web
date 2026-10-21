@@ -1,6 +1,8 @@
 /**
- * PulsAI Gateway Connector & Status Monitor
- * Gestiona de forma privada la verificación y comunicación con el gateway local
+ * PulsAI Gateway Connector
+ * Idéntico al sistema probado y funcionando en Pulso.
+ * Resuelve la URL dinámica del túnel desde Vercel Blob (limit=100 ordenado desc)
+ * con fallback a PULSAI_GATEWAY_URL / OLLAMA_HOST.
  */
 
 export interface PulsAIStatus {
@@ -11,121 +13,99 @@ export interface PulsAIStatus {
     error?: string;
 }
 
-const GATEWAY_URL = process.env.PULSAI_GATEWAY_URL || "http://127.0.0.1:11435";
-const GATEWAY_TOKEN = process.env.PULSAI_GATEWAY_TOKEN || "";
-const TARGET_MODEL = process.env.PULSAI_MODEL || "gemma4:e2b";
+const GATEWAY_URL_FALLBACK = process.env.PULSAI_GATEWAY_URL || process.env.OLLAMA_HOST || "http://127.0.0.1:11435";
+const GATEWAY_TOKEN = process.env.PULSAI_GATEWAY_TOKEN || process.env.OLLAMA_AUTH_TOKEN || "";
+const TARGET_MODEL = process.env.PULSAI_MODEL || process.env.OLLAMA_MODEL || "gemma4:e2b";
 
-let cachedTunnelUrl: { url: string; fetchedAt: number } | null = null;
-const CACHE_TTL_MS = 25000;
+let _tunnelUrlCache: { url: string; fetchedAt: number } | null = null;
+const TUNNEL_CACHE_TTL = 30 * 1000; // 30 segundos de cache
 
 export async function getGatewayUrl(): Promise<string> {
-    // Si estamos en localhost y responde, usarlo directamente
+    const now = Date.now();
+
+    // 1. Usar cache fresca
+    if (_tunnelUrlCache && (now - _tunnelUrlCache.fetchedAt < TUNNEL_CACHE_TTL)) {
+        return _tunnelUrlCache.url;
+    }
+
+    // 2. Si estamos en local y responde directamente, usar localhost
     try {
-        const ping = await fetch(`${GATEWAY_URL}/api/health`, {
-            headers: { Authorization: `Bearer ${GATEWAY_TOKEN}` },
+        const ping = await fetch(`${GATEWAY_URL_FALLBACK}/api/health`, {
+            headers: GATEWAY_TOKEN ? { Authorization: `Bearer ${GATEWAY_TOKEN}` } : {},
             signal: AbortSignal.timeout(1000)
         });
         if (ping.ok) {
-            return GATEWAY_URL.replace(/\/$/, "");
+            _tunnelUrlCache = { url: GATEWAY_URL_FALLBACK.replace(/\/$/, ""), fetchedAt: now };
+            return _tunnelUrlCache.url;
         }
     } catch {}
 
-    if (process.env.PULSAI_TUNNEL_URL) {
-        return process.env.PULSAI_TUNNEL_URL.replace(/\/$/, "");
-    }
-
-    const now = Date.now();
-    if (cachedTunnelUrl && (now - cachedTunnelUrl.fetchedAt < CACHE_TTL_MS)) {
-        return cachedTunnelUrl.url;
-    }
-
+    // 3. Resolver desde Vercel Blob (exactamente igual que en Pulso)
     const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
     if (blobToken) {
         try {
-            const listRes = await fetch("https://blob.vercel-storage.com?prefix=pulsai-tunnel-url&limit=5", {
+            const listRes = await fetch("https://blob.vercel-storage.com?prefix=pulsai-tunnel-url&limit=100", {
                 headers: { Authorization: `Bearer ${blobToken}` },
                 cache: "no-store",
-                signal: AbortSignal.timeout(3000),
+                signal: AbortSignal.timeout(4000),
             } as any);
 
             if (listRes.ok) {
                 const listData = await listRes.json();
                 const blobs: any[] = listData?.blobs || [];
+                // Ordenar por fecha de subida descendente para tomar el más reciente
                 blobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 
                 if (blobs.length > 0 && blobs[0].url) {
                     const blobRes = await fetch(blobs[0].url, {
                         cache: "no-store",
-                        signal: AbortSignal.timeout(3000),
+                        signal: AbortSignal.timeout(4000),
                     } as any);
                     if (blobRes.ok) {
                         const data = await blobRes.json();
                         if (data?.url && typeof data.url === "string" && data.url.startsWith("https://")) {
-                            cachedTunnelUrl = { url: data.url.replace(/\/$/, ""), fetchedAt: now };
-                            return cachedTunnelUrl.url;
+                            _tunnelUrlCache = { url: data.url.replace(/\/$/, ""), fetchedAt: now };
+                            return _tunnelUrlCache.url;
                         }
                     }
                 }
             }
         } catch (e: any) {
-            // Silencioso: fallback a GATEWAY_URL local
+            console.warn("[PulsAI] Error al leer Blob:", e.message);
         }
     }
 
-    return GATEWAY_URL.replace(/\/$/, "");
+    return GATEWAY_URL_FALLBACK.replace(/\/$/, "");
 }
 
 /**
  * Consulta la salud del Gateway existente (GET /api/health)
+ * Idéntico a /api/ai/status de Pulso
  */
 export async function checkGatewayStatus(): Promise<PulsAIStatus> {
     const startTime = Date.now();
-    
-    // 1. Probar primero el gateway local directo (más rápido y directo en tu portátil)
-    const localUrl = GATEWAY_URL.replace(/\/$/, "");
-    try {
-        const localRes = await fetch(`${localUrl}/api/health`, {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${GATEWAY_TOKEN}` },
-            cache: "no-store",
-            signal: AbortSignal.timeout(1500)
-        });
-
-        if (localRes.ok) {
-            const data = await localRes.json();
-            return {
-                online: data.status === "online",
-                model: data.model || TARGET_MODEL,
-                targetUrl: localUrl,
-                latencyMs: Date.now() - startTime
-            };
-        }
-    } catch {
-        // Si no responde localmente, probamos el túnel remoto (despliegue público)
-    }
-
-    // 2. Si no está en localhost, probar URL resuelta (túnel Cloudflare)
     const url = await getGatewayUrl();
+
     try {
+        const headers: Record<string, string> = {};
+        if (GATEWAY_TOKEN) headers["Authorization"] = `Bearer ${GATEWAY_TOKEN}`;
+
         const res = await fetch(`${url}/api/health`, {
             method: "GET",
-            headers: {
-                "Authorization": `Bearer ${GATEWAY_TOKEN}`
-            },
+            headers,
             cache: "no-store",
-            signal: AbortSignal.timeout(4500)
+            signal: AbortSignal.timeout(5000)
         });
 
         const latencyMs = Date.now() - startTime;
 
         if (!res.ok) {
-            const errData = await res.json().catch(() => ({ reason: `HTTP ${res.status}` }));
             return {
                 online: false,
                 model: TARGET_MODEL,
                 targetUrl: url,
                 latencyMs,
-                error: errData.reason || `Gateway respondió con código ${res.status}`
+                error: `Gateway HTTP ${res.status}`
             };
         }
 
@@ -134,7 +114,8 @@ export async function checkGatewayStatus(): Promise<PulsAIStatus> {
             online: data.status === "online",
             model: data.model || TARGET_MODEL,
             targetUrl: url,
-            latencyMs
+            latencyMs,
+            error: data.status === "online" ? undefined : (data.reason || "Modelo no cargado")
         };
     } catch (err: any) {
         return {
@@ -142,7 +123,7 @@ export async function checkGatewayStatus(): Promise<PulsAIStatus> {
             model: TARGET_MODEL,
             targetUrl: url,
             latencyMs: Date.now() - startTime,
-            error: err.name === "TimeoutError" ? "Tiempo de espera agotado al conectar con el gateway" : "Portátil o gateway desconectado (127.0.0.1:11435 no accesible)"
+            error: "No se puede conectar al gateway"
         };
     }
 }
