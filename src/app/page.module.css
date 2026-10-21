@@ -416,27 +416,137 @@
   border-bottom-left-radius: 4px;
 }
 
-/* Thinking Box */
+/* ============================
+   Thinking Box — Grok-style
+   ============================ */
 .thinkingBox {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.thinkingBoxLive {
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.08);
+}
+
+.thinkingBoxDone {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Toggle button (header) */
+.thinkingToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.35);
-  border-left: 3px solid var(--accent-amber);
-  font-size: 0.84rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.thinkingToggle:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.thinkingToggleLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.thinkingLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-amber);
+}
+
+.thinkingBoxDone .thinkingLabel {
   color: var(--text-muted);
 }
 
-.thinkingHeader {
+.thinkingChevron {
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+
+/* Pulsing brain animation during live thinking */
+.thinkingPulse {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
+  justify-content: center;
   color: var(--accent-amber);
-  margin-bottom: 4px;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  animation: brainPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes brainPulse {
+  0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 0px transparent); }
+  50% { opacity: 0.7; transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5)); }
+}
+
+.thinkingIconDone {
+  color: var(--text-dim);
+}
+
+/* Bouncing dots animation */
+.thinkingDots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.thinkingDots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-amber);
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+
+.dot1 { animation-delay: 0s; }
+.dot2 { animation-delay: 0.2s; }
+.dot3 { animation-delay: 0.4s; }
+
+@keyframes dotBounce {
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-4px); }
+}
+
+/* Collapsible content area */
+.thinkingContent {
+  max-height: 300px;
+  overflow-y: auto;
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.25s ease,
+              padding 0.25s ease;
+  opacity: 1;
+}
+
+.thinkingContentCollapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.thinkingInner {
+  padding: 0 14px 12px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Sources Box */

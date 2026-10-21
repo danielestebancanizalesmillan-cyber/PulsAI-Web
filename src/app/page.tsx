@@ -17,7 +17,9 @@ import {
   Cpu,
   Brain,
   Copy,
-  Check
+  Check,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import styles from "./page.module.css";
 
@@ -59,6 +61,7 @@ export default function PulsAIApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [collapsedThinking, setCollapsedThinking] = useState<Record<string, boolean>>({});
   
   // Historial de chats locales
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -331,6 +334,11 @@ export default function PulsAIApp() {
       );
       saveMessagesForSession(activeSessionId, finalMessages);
 
+      // Auto-collapse thinking after generation completes
+      if (accumulatedThinking) {
+        setCollapsedThinking(prev => ({ ...prev, [assistantMsgId]: true }));
+      }
+
     } catch (err: any) {
       if (err.name === "AbortError") {
         // Detenido por el usuario
@@ -497,16 +505,52 @@ export default function PulsAIApp() {
                   </div>
 
                   <div className={`${styles.messageBubble} ${m.role === "user" ? styles.bubbleUser : styles.bubbleAI}`}>
-                    {/* Caja de Pensamiento / Razonamiento */}
-                    {m.thinking && (
-                      <div className={styles.thinkingBox}>
-                        <div className={styles.thinkingHeader}>
-                          <Brain size={14} />
-                          <span>Razonamiento analítico</span>
+                    {/* Caja de Pensamiento / Razonamiento — Estilo Grok */}
+                    {m.thinking && (() => {
+                      const isCurrentlyThinking = isGenerating && m.id === messages[messages.length - 1]?.id && !m.content;
+                      const isCollapsed = collapsedThinking[m.id] ?? false;
+                      const toggleCollapse = () => {
+                        setCollapsedThinking(prev => ({ ...prev, [m.id]: !prev[m.id] }));
+                      };
+
+                      return (
+                        <div className={`${styles.thinkingBox} ${isCurrentlyThinking ? styles.thinkingBoxLive : styles.thinkingBoxDone}`}>
+                          <button 
+                            className={styles.thinkingToggle}
+                            onClick={toggleCollapse}
+                            type="button"
+                          >
+                            <div className={styles.thinkingToggleLeft}>
+                              {isCurrentlyThinking ? (
+                                <div className={styles.thinkingPulse}>
+                                  <Brain size={15} />
+                                </div>
+                              ) : (
+                                <Brain size={15} className={styles.thinkingIconDone} />
+                              )}
+                              <span className={styles.thinkingLabel}>
+                                {isCurrentlyThinking ? "Pensando..." : "Razonamiento analítico"}
+                              </span>
+                              {isCurrentlyThinking && (
+                                <div className={styles.thinkingDots}>
+                                  <span className={styles.dot1} />
+                                  <span className={styles.dot2} />
+                                  <span className={styles.dot3} />
+                                </div>
+                              )}
+                            </div>
+                            <div className={styles.thinkingChevron}>
+                              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                            </div>
+                          </button>
+                          <div className={`${styles.thinkingContent} ${isCollapsed ? styles.thinkingContentCollapsed : ""}`}>
+                            <div className={styles.thinkingInner}>
+                              {m.thinking}
+                            </div>
+                          </div>
                         </div>
-                        <div>{m.thinking}</div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Contenido principal en Markdown */}
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
