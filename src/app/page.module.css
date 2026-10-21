@@ -744,8 +744,142 @@
 .messageActionsRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.messageBubble:hover .messageActionsRow {
+  opacity: 1;
+}
+
+/* Reply indicator inside message bubble */
+.replyIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  background: rgba(0, 229, 255, 0.06);
+  border-left: 3px solid rgba(0, 229, 255, 0.4);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.replyPreview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
+/* Attached file badge inside message bubbles */
+.msgAttachedFileBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  margin-bottom: 10px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: #a78bfa;
+}
+
+/* Reply banner in input area */
+.replyBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--accent-cyan);
+}
+
+.replyBannerText {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+
+/* Edit mode for messages */
+.editContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.editTextarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.92rem;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 60px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.editTextarea:focus {
+  border-color: var(--accent-cyan);
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.editSaveBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--accent-cyan);
+  color: #000;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.editSaveBtn:hover {
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+}
+
+.editCancelBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.editCancelBtn:hover {
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .inputRow {

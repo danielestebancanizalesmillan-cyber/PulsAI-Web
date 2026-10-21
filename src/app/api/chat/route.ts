@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (attachedContext) {
-            contextAugmentation += `\n\nCONTENIDO DE DOCUMENTO ADJUNTO:\n${attachedContext.slice(0, 5000)}\n\n`;
+            contextAugmentation += `\n\nCONTENIDO DE DOCUMENTO ADJUNTO:\n${attachedContext.slice(0, 8000)}\n\n`;
         }
 
         const gatewayUrl = await getGatewayUrl();
@@ -100,8 +100,8 @@ export async function POST(req: NextRequest) {
                 options: {
                     temperature: 0.85, // Calibrado a 0.85 para juicio reflexivo, profundidad argumental y criterio propio sin rigidez
                     top_p: 0.92, // Permite conexiones conceptuales más ricas y argumentación sólida
-                    num_predict: (hasImages || hasDoc) ? 2048 : 4096, // Longitud óptima para evitar demoras
-                    num_ctx: hasImages ? 3072 : (hasDoc ? 4096 : 8192), // Contexto adaptado: 4096 para docs evita el bloqueo de CPU
+                    num_predict: 6144, // Garantizar respuestas completas y exhaustivas siempre (hasta ~4800 palabras)
+                    num_ctx: hasImages ? 4096 : 8192, // 8192 tokens para abarcar documento y respuesta completa
                     num_thread: 4 // Máxima velocidad de generación multihilo
                 }
             }),

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { 
@@ -24,7 +24,12 @@ import {
   Mic,
   MicOff,
   Volume2,
-  VolumeX
+  VolumeX,
+  RefreshCw,
+  Pencil,
+  Reply,
+  CornerDownRight,
+  FileText
 } from "lucide-react";
 import styles from "./page.module.css";
 
@@ -41,6 +46,8 @@ interface Message {
   thinking?: string;
   sources?: SearchSource[];
   images?: string[]; // Array de strings base64
+  attachedFileName?: string; // Nombre del archivo adjunto
+  replyToId?: string; // ID del mensaje al que se responde
   createdAt: string;
 }
 
@@ -69,6 +76,11 @@ export default function PulsAIApp() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collapsedThinking, setCollapsedThinking] = useState<Record<string, boolean>>({});
+
+  // Estados para edición y respuesta a mensajes
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   // Estados de voz y audio
   const [isRecording, setIsRecording] = useState(false);
@@ -440,26 +452,37 @@ export default function PulsAIApp() {
     }
   };
 
+  // Ref mutable para acumular contenido durante el streaming (para acceso desde handleStopGeneration)
+  const streamAccumulatorRef = useRef<{ content: string; thinking: string; sources: SearchSource[]; msgId: string; baseMessages: Message[] } | null>(null);
+
   // Enviar mensaje con streaming nativo SSE
-  const handleSendMessage = async () => {
-    const hasText = inputText.trim().length > 0;
+  const handleSendMessage = async (overrideMessages?: Message[], overrideText?: string) => {
+    const textToSend = overrideText ?? inputText.trim();
+    const hasText = textToSend.length > 0;
     const hasImages = attachedImages.length > 0;
     if ((!hasText && !hasImages) || isGenerating) return;
 
-    const userPrompt = inputText.trim() || (hasImages ? "¿Qué observas en esta imagen? Analízala detalladamente." : "");
+    const userPrompt = textToSend || (hasImages ? "¿Qué observas en esta imagen? Analízala detalladamente." : "");
     const imagesToSend = attachedImages.map(img => img.base64);
     const imageUrlsToDisplay = attachedImages.map(img => img.dataUrl);
 
     setInputText("");
     setAttachedImages([]);
 
+    const baseMessages = overrideMessages ?? messages;
+
     const newUserMsg: Message = {
       id: "usr_" + Date.now(),
       role: "user",
       content: userPrompt,
       images: imageUrlsToDisplay.length > 0 ? imageUrlsToDisplay : undefined,
+      attachedFileName: attachedFile?.name || undefined,
+      replyToId: replyingTo?.id || undefined,
       createdAt: new Date().toISOString()
     };
+
+    // Limpiar estado de respuesta
+    setReplyingTo(null);
 
     const assistantMsgId = "ai_" + Date.now();
     const placeholderMsg: Message = {
@@ -471,12 +494,12 @@ export default function PulsAIApp() {
       createdAt: new Date().toISOString()
     };
 
-    const updatedMessages = [...messages, newUserMsg, placeholderMsg];
+    const updatedMessages = [...baseMessages, newUserMsg, placeholderMsg];
     saveMessagesForSession(activeSessionId, updatedMessages);
     setIsGenerating(true);
 
     // Actualizar título del chat si es el primer mensaje
-    if (messages.length === 0) {
+    if (baseMessages.length === 0) {
       const title = userPrompt.slice(0, 32) + (userPrompt.length > 32 ? "..." : "");
       const updatedSessions = sessions.map(s => s.id === activeSessionId ? { ...s, title } : s);
       setSessions(updatedSessions);
@@ -488,9 +511,12 @@ export default function PulsAIApp() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    // Inicializar acumulador mutable
+    streamAccumulatorRef.current = { content: "", thinking: "", sources: [], msgId: assistantMsgId, baseMessages: updatedMessages };
+
     try {
       // Construir historial de mensajes incluyendo las imágenes enviadas en el formato que espera el backend
-      const messagesPayload = [...messages, newUserMsg].map(m => {
+      const messagesPayload = [...baseMessages, newUserMsg].map(m => {
         const payloadObj: { role: string; content: string; images?: string[] } = {
           role: m.role,
           content: m.content
@@ -522,10 +548,6 @@ export default function PulsAIApp() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      let accumulatedContent = "";
-      let accumulatedThinking = "";
-      let accumulatedSources: SearchSource[] = [];
-
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
@@ -549,12 +571,15 @@ export default function PulsAIApp() {
 
             try {
               const data = JSON.parse(dataStr);
+              const acc = streamAccumulatorRef.current;
+              if (!acc) continue;
+
               if (event === "token" && data.token) {
-                accumulatedContent += data.token;
+                acc.content += data.token;
               } else if (event === "thinking" && data.thinking) {
-                accumulatedThinking += data.thinking;
+                acc.thinking += data.thinking;
               } else if (event === "sources" && Array.isArray(data)) {
-                accumulatedSources = data;
+                acc.sources = data;
               }
 
               setMessages(prev =>
@@ -562,9 +587,9 @@ export default function PulsAIApp() {
                   m.id === assistantMsgId
                     ? {
                         ...m,
-                        content: accumulatedContent,
-                        thinking: accumulatedThinking,
-                        sources: accumulatedSources
+                        content: acc.content,
+                        thinking: acc.thinking,
+                        sources: acc.sources
                       }
                     : m
                 )
@@ -574,32 +599,47 @@ export default function PulsAIApp() {
         }
       }
 
+      const acc = streamAccumulatorRef.current;
       // Guardar versión final
       const finalMessages = updatedMessages.map(m =>
         m.id === assistantMsgId
           ? {
               ...m,
-              content: accumulatedContent || "No se obtuvo respuesta del modelo.",
-              thinking: accumulatedThinking,
-              sources: accumulatedSources
+              content: acc?.content || "No se obtuvo respuesta del modelo.",
+              thinking: acc?.thinking || "",
+              sources: acc?.sources || []
             }
           : m
       );
       saveMessagesForSession(activeSessionId, finalMessages);
 
       // Auto-collapse thinking after generation completes
-      if (accumulatedThinking) {
+      if (acc?.thinking) {
         setCollapsedThinking(prev => ({ ...prev, [assistantMsgId]: true }));
       }
 
       // Lectura por voz automática si el usuario la activó
-      if (autoSpeak && accumulatedContent) {
-        speakMessage(accumulatedContent, assistantMsgId);
+      if (autoSpeak && acc?.content) {
+        speakMessage(acc.content, assistantMsgId);
       }
 
     } catch (err: any) {
       if (err.name === "AbortError") {
-        // Detenido por el usuario
+        // Detenido por el usuario — guardar contenido parcial
+        const acc = streamAccumulatorRef.current;
+        if (acc && acc.content) {
+          const partialMessages = updatedMessages.map(m =>
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  content: acc.content + "\n\n*— Generación detenida por el usuario —*",
+                  thinking: acc.thinking,
+                  sources: acc.sources
+                }
+              : m
+          );
+          saveMessagesForSession(activeSessionId, partialMessages);
+        }
       } else {
         const errorMsg: Message = {
           id: "err_" + Date.now(),
@@ -612,6 +652,7 @@ export default function PulsAIApp() {
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
+      streamAccumulatorRef.current = null;
       setAttachedFile(null); // Consumir archivo adjunto
     }
   };
@@ -619,7 +660,7 @@ export default function PulsAIApp() {
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsGenerating(false);
+      // El contenido parcial se guarda en el catch del AbortError
     }
   };
 
@@ -635,6 +676,81 @@ export default function PulsAIApp() {
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
+
+  // ========================
+  // CONTROLES DE MENSAJES
+  // ========================
+
+  // Borrar un mensaje individual
+  const handleDeleteMessage = (msgId: string) => {
+    const updated = messages.filter(m => m.id !== msgId);
+    saveMessagesForSession(activeSessionId, updated);
+  };
+
+  // Regenerar la última respuesta del asistente (reenvía el último mensaje del usuario)
+  const handleRegenerateResponse = (assistantMsgId: string) => {
+    // Encontrar el índice del mensaje asistente
+    const idx = messages.findIndex(m => m.id === assistantMsgId);
+    if (idx < 0) return;
+
+    // Buscar el mensaje del usuario inmediatamente anterior
+    let userMsg: Message | null = null;
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        userMsg = messages[i];
+        break;
+      }
+    }
+    if (!userMsg) return;
+
+    // Recortar el historial hasta antes del par user+assistant
+    const historyBefore = messages.slice(0, idx - 1);
+    saveMessagesForSession(activeSessionId, historyBefore);
+    // Reenviar con el texto del usuario original
+    setTimeout(() => {
+      handleSendMessage(historyBefore, userMsg!.content);
+    }, 50);
+  };
+
+  // Iniciar edición de un mensaje del usuario
+  const handleStartEdit = (msg: Message) => {
+    setEditingMessageId(msg.id);
+    setEditingText(msg.content);
+  };
+
+  // Guardar edición y reenviar
+  const handleSaveEdit = (msgId: string) => {
+    if (!editingText.trim()) return;
+    const idx = messages.findIndex(m => m.id === msgId);
+    if (idx < 0) return;
+
+    // Recortar todo lo que viene después del mensaje editado
+    const historyBefore = messages.slice(0, idx);
+    setEditingMessageId(null);
+    setEditingText("");
+    saveMessagesForSession(activeSessionId, historyBefore);
+    setTimeout(() => {
+      handleSendMessage(historyBefore, editingText.trim());
+    }, 50);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingText("");
+  };
+
+  // Responder a un mensaje específico
+  const handleReplyTo = (msg: Message) => {
+    setReplyingTo(msg);
+    // Focus en el textarea
+    const textarea = document.querySelector('textarea');
+    if (textarea) textarea.focus();
+  };
+
+  // Encontrar un mensaje por su ID (para mostrar el reply-to)
+  const getMessageById = useCallback((id: string) => {
+    return messages.find(m => m.id === id);
+  }, [messages]);
 
   return (
     <div className={styles.layout}>
@@ -763,6 +879,28 @@ export default function PulsAIApp() {
                   </div>
 
                   <div className={`${styles.messageBubble} ${m.role === "user" ? styles.bubbleUser : styles.bubbleAI}`}>
+                    {/* Indicador de respuesta a otro mensaje */}
+                    {m.replyToId && (() => {
+                      const repliedMsg = getMessageById(m.replyToId);
+                      if (!repliedMsg) return null;
+                      return (
+                        <div className={styles.replyIndicator}>
+                          <CornerDownRight size={12} />
+                          <span className={styles.replyPreview}>
+                            {repliedMsg.role === "user" ? "Tú" : "PulsAI"}: {repliedMsg.content.slice(0, 80)}{repliedMsg.content.length > 80 ? "..." : ""}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Badge de archivo adjunto en el mensaje del usuario */}
+                    {m.attachedFileName && (
+                      <div className={styles.msgAttachedFileBadge}>
+                        <FileText size={13} />
+                        <span>{m.attachedFileName}</span>
+                      </div>
+                    )}
+
                     {/* Caja de Pensamiento / Razonamiento — Estilo Grok */}
                     {m.thinking && (() => {
                       const isCurrentlyThinking = isGenerating && m.id === messages[messages.length - 1]?.id && !m.content;
@@ -826,29 +964,90 @@ export default function PulsAIApp() {
                       </div>
                     )}
 
-                    {/* Contenido principal en Markdown */}
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {m.content}
-                    </ReactMarkdown>
+                    {/* Contenido principal en Markdown — o editor si se está editando */}
+                    {editingMessageId === m.id ? (
+                      <div className={styles.editContainer}>
+                        <textarea
+                          className={styles.editTextarea}
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          rows={4}
+                          autoFocus
+                        />
+                        <div className={styles.editActions}>
+                          <button className={styles.editSaveBtn} onClick={() => handleSaveEdit(m.id)}>
+                            <Check size={14} /> Guardar y reenviar
+                          </button>
+                          <button className={styles.editCancelBtn} onClick={handleCancelEdit}>
+                            <X size={14} /> Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {m.content}
+                      </ReactMarkdown>
+                    )}
 
-                    {/* Barra de acciones para respuestas del asistente */}
-                    {m.role === "assistant" && m.content && (
+                    {/* Barra de acciones para TODOS los mensajes (no solo asistente) */}
+                    {m.content && !isGenerating && editingMessageId !== m.id && (
                       <div className={styles.messageActionsRow}>
+                        {/* Acciones comunes */}
                         <button 
                           className={styles.actionIconBtn} 
                           onClick={() => copyToClipboard(m.content, m.id)}
-                          title="Copiar respuesta"
+                          title="Copiar"
                         >
                           {copiedId === m.id ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
                         </button>
 
                         <button 
-                          className={`${styles.actionIconBtn} ${speakingMessageId === m.id ? styles.speakingBtnActive : ""}`} 
-                          onClick={() => speakMessage(m.content, m.id)}
-                          title={speakingMessageId === m.id ? "Detener lectura en voz alta" : "Leer en voz alta"}
+                          className={styles.actionIconBtn}
+                          onClick={() => handleDeleteMessage(m.id)}
+                          title="Borrar mensaje"
                         >
-                          {speakingMessageId === m.id ? <VolumeX size={14} color="#00e5ff" /> : <Volume2 size={14} />}
+                          <Trash2 size={14} />
                         </button>
+
+                        <button 
+                          className={styles.actionIconBtn}
+                          onClick={() => handleReplyTo(m)}
+                          title="Responder a este mensaje"
+                        >
+                          <Reply size={14} />
+                        </button>
+
+                        {/* Acciones solo para mensajes del usuario */}
+                        {m.role === "user" && (
+                          <button 
+                            className={styles.actionIconBtn}
+                            onClick={() => handleStartEdit(m)}
+                            title="Editar mensaje"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
+
+                        {/* Acciones solo para mensajes del asistente */}
+                        {m.role === "assistant" && (
+                          <>
+                            <button 
+                              className={styles.actionIconBtn}
+                              onClick={() => handleRegenerateResponse(m.id)}
+                              title="Regenerar respuesta"
+                            >
+                              <RefreshCw size={14} />
+                            </button>
+
+                            <button 
+                              className={`${styles.actionIconBtn} ${speakingMessageId === m.id ? styles.speakingBtnActive : ""}`} 
+                              onClick={() => speakMessage(m.content, m.id)}
+                              title={speakingMessageId === m.id ? "Detener lectura en voz alta" : "Leer en voz alta"}
+                            >
+                              {speakingMessageId === m.id ? <VolumeX size={14} color="#00e5ff" /> : <Volume2 size={14} />}
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -897,6 +1096,19 @@ export default function PulsAIApp() {
               <div className={styles.voiceRecordingBanner}>
                 <span className={styles.recordingPulseDot} />
                 <span>Escuchando tu voz... Habla con naturalidad hacia tu micrófono.</span>
+              </div>
+            )}
+
+            {/* Indicador de responder a un mensaje */}
+            {replyingTo && (
+              <div className={styles.replyBanner}>
+                <Reply size={14} />
+                <span className={styles.replyBannerText}>
+                  Respondiendo a {replyingTo.role === "user" ? "tu mensaje" : "PulsAI"}: {replyingTo.content.slice(0, 60)}{replyingTo.content.length > 60 ? "..." : ""}
+                </span>
+                <button className={styles.actionIconBtn} onClick={() => setReplyingTo(null)}>
+                  <X size={14} />
+                </button>
               </div>
             )}
 
@@ -953,7 +1165,7 @@ export default function PulsAIApp() {
               ) : (
                 <button 
                   className={styles.sendBtn} 
-                  onClick={handleSendMessage}
+                  onClick={() => handleSendMessage()}
                   disabled={!inputText.trim() && attachedImages.length === 0}
                   title="Enviar mensaje"
                 >
