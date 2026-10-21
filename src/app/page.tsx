@@ -116,8 +116,9 @@ export default function PulsAIApp() {
     }
   }, []);
 
-  // 2. Monitorear salud del Gateway periódicamente
+  // 2. Monitorear salud del Gateway periódicamente (solo si no se está generando una respuesta para no saturar la CPU)
   const checkStatus = async () => {
+    if (isGenerating) return;
     try {
       const res = await fetch("/api/status");
       if (res.ok) {
@@ -133,9 +134,9 @@ export default function PulsAIApp() {
 
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 15000);
+    const interval = setInterval(checkStatus, 30000); // 30 segundos en lugar de 15s para evitar tráfico innecesario
     return () => clearInterval(interval);
-  }, []);
+  }, [isGenerating]);
 
   // Auto-scroll al recibir tokens
   useEffect(() => {
