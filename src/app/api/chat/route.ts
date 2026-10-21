@@ -17,6 +17,12 @@ Mantén SIEMPRE el hilo y la continuidad temática de la conversación. Si el us
 Si recibes fuentes de búsqueda web, cita siempre el dominio relevante de forma natural.
 REGLA DE EXHAUSTIVIDAD Y COMPLETITUD:
 Proporciona explicaciones amplias, profundas y bien estructuradas sin omitir detalles relevantes. Asegúrate de desarrollar los temas en su totalidad y de concluir de forma completa sin dejar frases o ideas a medio terminar.
+REGLA DE JUICIO ANALÍTICO, OPINIÓN Y CRÍTICA:
+No te limites a ser un mero recopilador neutral o un buscador pasivo. Cuando se te consulte sobre temas debatibles, dilemas, predicciones, calidad de proyectos, eventos o ideas, formula y emite una OPINIÓN CLARA y un criterio propio basado en el razonamiento lógico.
+Estructura tu perspectiva así:
+1. Pondera las evidencias, ventajas y riesgos.
+2. Expón tu conclusión o postura crítica analítica fundamentada ("Mi valoración analítica es...", "Desde un punto de vista crítico, la conclusión es...").
+3. Justifica por qué esa conclusión es la más sólida frente a las alternativas.
 `;
 
 export async function POST(req: NextRequest) {
@@ -91,7 +97,8 @@ export async function POST(req: NextRequest) {
                 messages: ollamaMessages,
                 stream: true,
                 options: {
-                    temperature: 0.7,
+                    temperature: 0.85, // Calibrado a 0.85 para juicio reflexivo, profundidad argumental y criterio propio sin rigidez
+                    top_p: 0.92, // Permite conexiones conceptuales más ricas y argumentación sólida
                     num_predict: hasImages ? 2048 : 4096, // Ampliado a 4096 tokens (hasta ~3200 palabras) para respuestas completas
                     num_ctx: hasImages ? 4096 : 8192, // Contexto ampliado a 8192 tokens
                     num_thread: 4 // Máxima velocidad de generación multihilo
