@@ -43,7 +43,13 @@ async function publishTunnelUrl(url) {
 function startTunnel() {
     console.log("[PulsAI] Iniciando túnel hacia http://127.0.0.1:11435...");
     
-    const tunnel = spawn(cloudflaredPath, ["tunnel", "--url", "http://127.0.0.1:11435"], {
+    // Ejecutar cloudflared con argumentos óptimos
+    const tunnel = spawn(cloudflaredPath, [
+        "tunnel", 
+        "--url", "http://127.0.0.1:11435",
+        "--no-autoupdate",
+        "--protocol", "quic"
+    ], {
         stdio: ["ignore", "pipe", "pipe"]
     });
 
@@ -67,10 +73,12 @@ function startTunnel() {
     tunnel.stderr.on("data", onData);
 
     tunnel.on("exit", (code) => {
-        console.error(`[PulsAI] Túnel cerrado (${code}). Reiniciando en 5s...`);
+        console.error(`[PulsAI] Túnel cerrado (${code}). Reiniciando en 3s...`);
         detected = false;
-        setTimeout(startTunnel, 5000);
+        setTimeout(startTunnel, 3000);
     });
+
+    return tunnel;
 }
 
 startTunnel();

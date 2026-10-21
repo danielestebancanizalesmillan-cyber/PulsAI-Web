@@ -134,6 +134,7 @@ export default function PulsAIApp() {
 
   const switchSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
+    if (window.innerWidth <= 768) setSidebarOpen(false);
     try {
       const saved = localStorage.getItem(`pulsai_messages_${sessionId}`);
       setMessages(saved ? JSON.parse(saved) : []);
@@ -153,6 +154,7 @@ export default function PulsAIApp() {
     setSessions(updated);
     setActiveSessionId(newId);
     setMessages([]);
+    if (window.innerWidth <= 768) setSidebarOpen(false);
     try {
       localStorage.setItem("pulsai_sessions", JSON.stringify(updated));
     } catch (e) {}
@@ -370,6 +372,14 @@ export default function PulsAIApp() {
 
   return (
     <div className={styles.layout}>
+      {/* OVERLAY PARA MÓVIL */}
+      {sidebarOpen && (
+        <div 
+          className={styles.mobileOverlay} 
+          onClick={() => setSidebarOpen(false)} 
+        />
+      )}
+
       {/* SIDEBAR */}
       <aside className={`${styles.sidebar} ${!sidebarOpen ? styles.sidebarClosed : ""}`}>
         <div className={styles.brandHeader}>
