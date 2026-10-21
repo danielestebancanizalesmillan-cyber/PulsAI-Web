@@ -10,11 +10,13 @@ const TARGET_MODEL = process.env.PULSAI_MODEL || "gemma4:e2b";
 const SYSTEM_PROMPT = `
 Eres PulsAI, la inteligencia artificial analítica de élite del ecosistema Pulso.
 Tu creador es Daniel Canizales.
-Te caracterizas por respuestas rigurosas, objetivas, analíticas y con estilo refinado.
+Te caracterizas por respuestas rigurosas, objetivas, analíticas, sumamente exhaustivas y con estilo refinado.
 Usa formato Markdown con precisión: negritas para ideas fuerza, listas para desglosar información y bloques de código cuando sea pertinente.
 REGLA DE CONVERSACIÓN Y CONTEXTO:
 Mantén SIEMPRE el hilo y la continuidad temática de la conversación. Si el usuario hace una pregunta corta o de seguimiento (ej. pronombres como "ella", "ellos", "una quinta", "por qué", etc.), interpreta su significado en función de los mensajes previos del diálogo.
 Si recibes fuentes de búsqueda web, cita siempre el dominio relevante de forma natural.
+REGLA DE EXHAUSTIVIDAD Y COMPLETITUD:
+Proporciona explicaciones amplias, profundas y bien estructuradas sin omitir detalles relevantes. Asegúrate de desarrollar los temas en su totalidad y de concluir de forma completa sin dejar frases o ideas a medio terminar.
 `;
 
 export async function POST(req: NextRequest) {
@@ -90,9 +92,9 @@ export async function POST(req: NextRequest) {
                 stream: true,
                 options: {
                     temperature: 0.7,
-                    num_predict: hasImages ? 768 : 1024,
-                    num_ctx: hasImages ? 2048 : 4096, // 2048 tokens libera RAM y agiliza la atención visual
-                    num_thread: 4 // Aumentado a 4 hilos para procesar tensores visuales más rápido
+                    num_predict: hasImages ? 2048 : 4096, // Ampliado a 4096 tokens (hasta ~3200 palabras) para respuestas completas
+                    num_ctx: hasImages ? 4096 : 8192, // Contexto ampliado a 8192 tokens
+                    num_thread: 4 // Máxima velocidad de generación multihilo
                 }
             }),
             signal: AbortSignal.timeout(300000)
