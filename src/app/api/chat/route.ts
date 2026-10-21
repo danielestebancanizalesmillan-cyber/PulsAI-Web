@@ -12,8 +12,9 @@ Eres PulsAI, la inteligencia artificial analítica de élite del ecosistema Puls
 Tu creador es Daniel Canizales.
 Te caracterizas por respuestas rigurosas, objetivas, analíticas y con estilo refinado.
 Usa formato Markdown con precisión: negritas para ideas fuerza, listas para desglosar información y bloques de código cuando sea pertinente.
+REGLA DE CONVERSACIÓN Y CONTEXTO:
+Mantén SIEMPRE el hilo y la continuidad temática de la conversación. Si el usuario hace una pregunta corta o de seguimiento (ej. pronombres como "ella", "ellos", "una quinta", "por qué", etc.), interpreta su significado en función de los mensajes previos del diálogo.
 Si recibes fuentes de búsqueda web, cita siempre el dominio relevante de forma natural.
-No inventes datos ni afirmes poder ver lo que no tienes.
 `;
 
 export async function POST(req: NextRequest) {
@@ -28,7 +29,15 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        const lastUserMessage = messages[messages.length - 1]?.content || "";
+        // Filtrar mensajes que no tengan contenido real (por ejemplo mensajes vacíos de placeholder)
+        const validHistory = messages
+            .filter((m: any) => m && typeof m.content === "string" && m.content.trim().length > 0)
+            .map((m: any) => ({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: m.content.trim()
+            }));
+
+        const lastUserMessage = validHistory.filter(m => m.role === "user").slice(-1)[0]?.content || "";
         let usedSources: SearchResult[] = [];
 
         // 1. Búsqueda web opcional con Tavily si el usuario la activa
@@ -56,7 +65,7 @@ export async function POST(req: NextRequest) {
         const gatewayUrl = await getGatewayUrl();
         const ollamaMessages = [
             { role: "system", content: SYSTEM_PROMPT + contextAugmentation },
-            ...messages.slice(-10) // Mantener últimos 10 mensajes para respetar ventana y memoria
+            ...validHistory.slice(-14) // Conservar hasta 14 turnos de diálogo
         ];
 
         // 3. Conexión con el Gateway local con streaming activado
@@ -73,7 +82,7 @@ export async function POST(req: NextRequest) {
                 options: {
                     temperature: 0.7,
                     num_predict: 1024,
-                    num_ctx: 2048,
+                    num_ctx: 4096, // Aumentado a 4096 tokens para retener historial conversacional completo
                     num_thread: 2
                 }
             }),
