@@ -212,7 +212,64 @@ export default function PulsAIApp() {
     };
   }, []);
 
-  // Manejo de carga de imágenes (JPG, PNG, WEBP, GIF hasta 4MB)
+  // Función para optimizar y redimensionar imágenes en el navegador antes de enviarlas
+  // Esto reduce fotos de 10MB a ~150-250KB, resolviendo el error 502 (payload límite) y 524 (timeout en CPU)
+  const optimizeAndAttachImage = async (file: File) => {
+    return new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve();
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          // Exportar en JPEG optimizado (0.82 de calidad)
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+          const base64Data = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+
+          setAttachedImages(prev => [
+            ...prev,
+            {
+              name: file.name || "foto_optimizada.jpg",
+              dataUrl: dataUrl,
+              base64: base64Data
+            }
+          ]);
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = readerEvent.target?.result as string;
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Manejo de carga de imágenes (Cámara o Galería)
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -223,28 +280,7 @@ export default function PulsAIApp() {
         alert("Solo se admiten archivos de imagen (JPG, PNG, WEBP, GIF).");
         continue;
       }
-      if (file.size > 4 * 1024 * 1024) {
-        alert(`La imagen "${file.name}" supera el límite de 4 MB.`);
-        continue;
-      }
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      try {
-        const res = await fetch("/api/upload-image", {
-          method: "POST",
-          body: formData
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setAttachedImages(prev => [...prev, { name: data.name, dataUrl: data.dataUrl, base64: data.base64 }]);
-        } else {
-          alert(data.error || "Error al procesar la imagen.");
-        }
-      } catch (err: any) {
-        alert("Error al subir imagen: " + err.message);
-      }
+      await optimizeAndAttachImage(file);
     }
 
     if (imageInputRef.current) imageInputRef.current.value = "";
@@ -264,27 +300,7 @@ export default function PulsAIApp() {
       if (item.type.indexOf("image") !== -1) {
         const file = item.getAsFile();
         if (!file) continue;
-
-        if (file.size > 4 * 1024 * 1024) {
-          alert("La imagen pegada supera el límite de 4 MB.");
-          continue;
-        }
-
-        const formData = new FormData();
-        formData.append("file", file);
-
-        try {
-          const res = await fetch("/api/upload-image", {
-            method: "POST",
-            body: formData
-          });
-          const data = await res.json();
-          if (res.ok) {
-            setAttachedImages(prev => [...prev, { name: data.name || "imagen_pegada.png", dataUrl: data.dataUrl, base64: data.base64 }]);
-          }
-        } catch (err: any) {
-          console.error("Error al procesar imagen pegada:", err);
-        }
+        await optimizeAndAttachImage(file);
       }
     }
   };

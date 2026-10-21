@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
             ...validHistory.slice(-14) // Conservar hasta 14 turnos de diálogo
         ];
 
+        // Verificar si la petición contiene imágenes para ajustar los parámetros de inferencia visual
+        const hasImages = ollamaMessages.some(m => Array.isArray(m.images) && m.images.length > 0);
+
         // 3. Conexión con el Gateway local con streaming activado
         const gatewayRes = await fetch(`${gatewayUrl}/api/chat`, {
             method: "POST",
@@ -87,9 +90,9 @@ export async function POST(req: NextRequest) {
                 stream: true,
                 options: {
                     temperature: 0.7,
-                    num_predict: 1024,
-                    num_ctx: 4096, // Aumentado a 4096 tokens para retener historial conversacional completo
-                    num_thread: 2
+                    num_predict: hasImages ? 768 : 1024,
+                    num_ctx: hasImages ? 2048 : 4096, // 2048 tokens libera RAM y agiliza la atención visual
+                    num_thread: 4 // Aumentado a 4 hilos para procesar tensores visuales más rápido
                 }
             }),
             signal: AbortSignal.timeout(300000)
