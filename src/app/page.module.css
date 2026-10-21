@@ -633,6 +633,120 @@
   align-self: flex-start;
 }
 
+/* Miniaturas de imágenes adjuntas en el área de input */
+.imagePreviewsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.imagePreviewCard {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.imagePreviewThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.imagePreviewRemove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.imagePreviewRemove:hover {
+  background: var(--accent-rose);
+}
+
+/* Imágenes dentro de las burbujas de mensajes */
+.messageImagesGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.messageImage {
+  max-width: 240px;
+  max-height: 200px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.messageImage:hover {
+  transform: scale(1.02);
+}
+
+/* Indicador de grabación de voz en vivo */
+.voiceRecordingBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: var(--radius-sm);
+  color: #fda4af;
+  font-size: 0.82rem;
+}
+
+.recordingPulseDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-rose);
+  animation: pulseRecording 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseRecording {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(1.3); }
+}
+
+.voiceBtnActive {
+  background: rgba(244, 63, 94, 0.2) !important;
+  border-color: var(--accent-rose) !important;
+  color: var(--accent-rose) !important;
+  animation: pulseRecording 1.5s infinite;
+}
+
+.speakingBtnActive {
+  background: rgba(0, 229, 255, 0.2) !important;
+  border-color: var(--accent-cyan) !important;
+  color: var(--accent-cyan) !important;
+}
+
+.messageActionsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .inputRow {
   display: flex;
   align-items: flex-end;
@@ -826,5 +940,24 @@
 
   .textarea {
     font-size: 0.92rem;
+  }
+
+  .controlsRow {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .controlsLeft {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .controlsRight {
+    margin-left: auto;
+  }
+
+  .toolBtn {
+    padding: 5px 8px;
+    font-size: 0.75rem;
   }
 }

@@ -19,7 +19,12 @@ import {
   Copy,
   Check,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Image as ImageIcon,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import styles from "./page.module.css";
 
@@ -35,6 +40,7 @@ interface Message {
   content: string;
   thinking?: string;
   sources?: SearchSource[];
+  images?: string[]; // Array de strings base64
   createdAt: string;
 }
 
@@ -58,10 +64,17 @@ export default function PulsAIApp() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [enableWebSearch, setEnableWebSearch] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null);
+  const [attachedImages, setAttachedImages] = useState<{ name: string; dataUrl: string; base64: string }[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collapsedThinking, setCollapsedThinking] = useState<Record<string, boolean>>({});
+
+  // Estados de voz y audio
+  const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [autoSpeak, setAutoSpeak] = useState(false);
   
   // Historial de chats locales
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -78,6 +91,8 @@ export default function PulsAIApp() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   // 1. Cargar historial persistente desde localStorage
   useEffect(() => {
@@ -181,7 +196,208 @@ export default function PulsAIApp() {
     }
   };
 
-  // Manejo de carga de archivos
+  // 3. Inicializar soporte de reconocimiento de voz (Web Speech API) y SpeechSynthesis
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setSpeechSupported(true);
+      }
+    }
+    return () => {
+      // Detener cualquier síntesis de voz al desmontar
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  // Manejo de carga de imágenes (JPG, PNG, WEBP, GIF hasta 4MB)
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith("image/")) {
+        alert("Solo se admiten archivos de imagen (JPG, PNG, WEBP, GIF).");
+        continue;
+      }
+      if (file.size > 4 * 1024 * 1024) {
+        alert(`La imagen "${file.name}" supera el límite de 4 MB.`);
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/api/upload-image", {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setAttachedImages(prev => [...prev, { name: data.name, dataUrl: data.dataUrl, base64: data.base64 }]);
+        } else {
+          alert(data.error || "Error al procesar la imagen.");
+        }
+      } catch (err: any) {
+        alert("Error al subir imagen: " + err.message);
+      }
+    }
+
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  };
+
+  const removeAttachedImage = (index: number) => {
+    setAttachedImages(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  // Soporte para pegar imágenes directamente desde el portapapeles (Ctrl+V)
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        if (file.size > 4 * 1024 * 1024) {
+          alert("La imagen pegada supera el límite de 4 MB.");
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const res = await fetch("/api/upload-image", {
+            method: "POST",
+            body: formData
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setAttachedImages(prev => [...prev, { name: data.name || "imagen_pegada.png", dataUrl: data.dataUrl, base64: data.base64 }]);
+          }
+        } catch (err: any) {
+          console.error("Error al procesar imagen pegada:", err);
+        }
+      }
+    }
+  };
+
+  // Control de entrada de voz por micrófono (Web Speech API)
+  const toggleVoiceRecording = () => {
+    if (!speechSupported) {
+      alert("Tu navegador no soporta reconocimiento de voz nativo (Web Speech API). Usa Google Chrome, Edge o Safari.");
+      return;
+    }
+
+    if (isRecording) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.lang = "es-ES";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setInputText(prev => {
+            const trimmed = prev.trim();
+            return trimmed ? `${trimmed} ${transcript}` : transcript;
+          });
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Error en reconocimiento de voz:", event.error);
+        setIsRecording(false);
+        if (event.error === "not-allowed") {
+          alert("Acceso al micrófono denegado. Permite el uso del micrófono en tu navegador.");
+        }
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e: any) {
+      console.error("No se pudo iniciar el micrófono:", e);
+      setIsRecording(false);
+    }
+  };
+
+  // Control de síntesis de voz (Text-to-Speech)
+  const speakMessage = (text: string, messageId: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      alert("Tu navegador no soporta lectura de texto en voz alta (SpeechSynthesis).");
+      return;
+    }
+
+    // Si ya está leyendo este mismo mensaje, pausar/detener
+    if (speakingMessageId === messageId) {
+      window.speechSynthesis.cancel();
+      setSpeakingMessageId(null);
+      return;
+    }
+
+    // Detener cualquier lectura previa
+    window.speechSynthesis.cancel();
+
+    // Limpiar Markdown y etiquetas antes de leer
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, " [bloque de código omitido] ")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/[*_#>[\]()]/g, "")
+      .replace(/\n+/g, ". ")
+      .trim();
+
+    if (!cleanText) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = "es-ES";
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    // Buscar una voz en español de calidad si está disponible
+    const voices = window.speechSynthesis.getVoices();
+    const esVoice = voices.find(v => v.lang.startsWith("es") || v.lang.includes("es-"));
+    if (esVoice) utterance.voice = esVoice;
+
+    utterance.onend = () => {
+      setSpeakingMessageId(null);
+    };
+
+    utterance.onerror = () => {
+      setSpeakingMessageId(null);
+    };
+
+    setSpeakingMessageId(messageId);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Manejo de carga de archivos de texto/documentos
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -209,15 +425,22 @@ export default function PulsAIApp() {
 
   // Enviar mensaje con streaming nativo SSE
   const handleSendMessage = async () => {
-    if (!inputText.trim() || isGenerating) return;
+    const hasText = inputText.trim().length > 0;
+    const hasImages = attachedImages.length > 0;
+    if ((!hasText && !hasImages) || isGenerating) return;
 
-    const userPrompt = inputText.trim();
+    const userPrompt = inputText.trim() || (hasImages ? "¿Qué observas en esta imagen? Analízala detalladamente." : "");
+    const imagesToSend = attachedImages.map(img => img.base64);
+    const imageUrlsToDisplay = attachedImages.map(img => img.dataUrl);
+
     setInputText("");
+    setAttachedImages([]);
 
     const newUserMsg: Message = {
       id: "usr_" + Date.now(),
       role: "user",
       content: userPrompt,
+      images: imageUrlsToDisplay.length > 0 ? imageUrlsToDisplay : undefined,
       createdAt: new Date().toISOString()
     };
 
@@ -249,11 +472,24 @@ export default function PulsAIApp() {
     abortControllerRef.current = abortController;
 
     try {
+      // Construir historial de mensajes incluyendo las imágenes enviadas en el formato que espera el backend
+      const messagesPayload = [...messages, newUserMsg].map(m => {
+        const payloadObj: { role: string; content: string; images?: string[] } = {
+          role: m.role,
+          content: m.content
+        };
+        // Si es el mensaje actual y tiene imágenes base64
+        if (m.id === newUserMsg.id && imagesToSend.length > 0) {
+          payloadObj.images = imagesToSend;
+        }
+        return payloadObj;
+      });
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [...messages, newUserMsg].map(m => ({ role: m.role, content: m.content })),
+          messages: messagesPayload,
           enableSearch: enableWebSearch,
           attachedContext: attachedFile?.content || ""
         }),
@@ -337,6 +573,11 @@ export default function PulsAIApp() {
       // Auto-collapse thinking after generation completes
       if (accumulatedThinking) {
         setCollapsedThinking(prev => ({ ...prev, [assistantMsgId]: true }));
+      }
+
+      // Lectura por voz automática si el usuario la activó
+      if (autoSpeak && accumulatedContent) {
+        speakMessage(accumulatedContent, assistantMsgId);
       }
 
     } catch (err: any) {
@@ -552,21 +793,46 @@ export default function PulsAIApp() {
                       );
                     })()}
 
+                    {/* Imágenes adjuntas si el usuario las envió */}
+                    {m.images && m.images.length > 0 && (
+                      <div className={styles.messageImagesGrid}>
+                        {m.images.map((imgUrl, imgIdx) => (
+                          <img 
+                            key={imgIdx} 
+                            src={imgUrl} 
+                            alt={`Imagen ${imgIdx + 1}`} 
+                            className={styles.messageImage} 
+                            onClick={() => window.open(imgUrl, "_blank")}
+                            title="Haz clic para ver imagen en tamaño completo"
+                          />
+                        ))}
+                      </div>
+                    )}
+
                     {/* Contenido principal en Markdown */}
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {m.content}
                     </ReactMarkdown>
 
-                    {/* Botón de copiar */}
+                    {/* Barra de acciones para respuestas del asistente */}
                     {m.role === "assistant" && m.content && (
-                      <button 
-                        className={styles.actionIconBtn} 
-                        style={{ marginTop: 8 }}
-                        onClick={() => copyToClipboard(m.content, m.id)}
-                        title="Copiar respuesta"
-                      >
-                        {copiedId === m.id ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
-                      </button>
+                      <div className={styles.messageActionsRow}>
+                        <button 
+                          className={styles.actionIconBtn} 
+                          onClick={() => copyToClipboard(m.content, m.id)}
+                          title="Copiar respuesta"
+                        >
+                          {copiedId === m.id ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                        </button>
+
+                        <button 
+                          className={`${styles.actionIconBtn} ${speakingMessageId === m.id ? styles.speakingBtnActive : ""}`} 
+                          onClick={() => speakMessage(m.content, m.id)}
+                          title={speakingMessageId === m.id ? "Detener lectura en voz alta" : "Leer en voz alta"}
+                        >
+                          {speakingMessageId === m.id ? <VolumeX size={14} color="#00e5ff" /> : <Volume2 size={14} />}
+                        </button>
+                      </div>
                     )}
 
                     {/* Fuentes de búsqueda web */}
@@ -609,6 +875,15 @@ export default function PulsAIApp() {
           )}
 
           <div className={`${styles.inputCard} ${isInputFocused ? styles.inputCardFocus : ""}`}>
+            {/* Banner de grabación de voz activa */}
+            {isRecording && (
+              <div className={styles.voiceRecordingBanner}>
+                <span className={styles.recordingPulseDot} />
+                <span>Escuchando tu voz... Habla con naturalidad hacia tu micrófono.</span>
+              </div>
+            )}
+
+            {/* Documento de texto adjunto */}
             {attachedFile && (
               <div className={styles.attachedBadge}>
                 <Paperclip size={13} />
@@ -623,13 +898,32 @@ export default function PulsAIApp() {
               </div>
             )}
 
+            {/* Miniaturas de imágenes seleccionadas */}
+            {attachedImages.length > 0 && (
+              <div className={styles.imagePreviewsContainer}>
+                {attachedImages.map((img, idx) => (
+                  <div key={idx} className={styles.imagePreviewCard}>
+                    <img src={img.dataUrl} alt={img.name} className={styles.imagePreviewThumb} />
+                    <button 
+                      className={styles.imagePreviewRemove} 
+                      onClick={() => removeAttachedImage(idx)}
+                      title="Eliminar imagen"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className={styles.inputRow}>
               <textarea
                 className={styles.textarea}
-                placeholder="Pregunta a PulsAI o pide un análisis... (Shift + Enter para salto de línea)"
+                placeholder="Pregunta a PulsAI, pega imágenes (Ctrl+V) o pulsa el micrófono... (Shift + Enter para salto de línea)"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
                 rows={1}
@@ -643,7 +937,7 @@ export default function PulsAIApp() {
                 <button 
                   className={styles.sendBtn} 
                   onClick={handleSendMessage}
-                  disabled={!inputText.trim()}
+                  disabled={!inputText.trim() && attachedImages.length === 0}
                   title="Enviar mensaje"
                 >
                   <Send size={16} />
@@ -653,6 +947,7 @@ export default function PulsAIApp() {
 
             <div className={styles.controlsRow}>
               <div className={styles.controlsLeft}>
+                {/* Botón de búsqueda en la web */}
                 <button 
                   className={`${styles.toolBtn} ${enableWebSearch ? styles.toolBtnActive : ""}`}
                   onClick={() => setEnableWebSearch(!enableWebSearch)}
@@ -662,6 +957,25 @@ export default function PulsAIApp() {
                   <span>Búsqueda web</span>
                 </button>
 
+                {/* Input y botón para imágenes */}
+                <input 
+                  type="file" 
+                  ref={imageInputRef} 
+                  style={{ display: "none" }} 
+                  onChange={handleImageUpload}
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  multiple
+                />
+                <button 
+                  className={styles.toolBtn}
+                  onClick={() => imageInputRef.current?.click()}
+                  title="Adjuntar imágenes para análisis visual (JPG, PNG, WEBP)"
+                >
+                  <ImageIcon size={14} />
+                  <span>Imagen</span>
+                </button>
+
+                {/* Input y botón para archivos de texto */}
                 <input 
                   type="file" 
                   ref={fileInputRef} 
@@ -675,7 +989,29 @@ export default function PulsAIApp() {
                   title="Adjuntar documento o archivo de texto"
                 >
                   <Paperclip size={14} />
-                  <span>Adjuntar</span>
+                  <span>Documento</span>
+                </button>
+
+                {/* Botón de micrófono / dictado por voz */}
+                <button 
+                  className={`${styles.toolBtn} ${isRecording ? styles.voiceBtnActive : ""}`}
+                  onClick={toggleVoiceRecording}
+                  title={isRecording ? "Detener grabación de voz" : "Dictar mensaje con el micrófono (Web Speech API)"}
+                >
+                  {isRecording ? <MicOff size={14} color="#f43f5e" /> : <Mic size={14} />}
+                  <span>{isRecording ? "Grabando..." : "Voz"}</span>
+                </button>
+              </div>
+
+              {/* Controles del lado derecho: Auto-lectura de respuestas */}
+              <div className={styles.controlsRight}>
+                <button 
+                  className={`${styles.toolBtn} ${autoSpeak ? styles.toolBtnActive : ""}`}
+                  onClick={() => setAutoSpeak(!autoSpeak)}
+                  title={autoSpeak ? "Desactivar lectura en voz alta automática" : "Activar lectura en voz alta automática de cada respuesta"}
+                >
+                  {autoSpeak ? <Volume2 size={14} color="#00e5ff" /> : <VolumeX size={14} />}
+                  <span>Voz automática</span>
                 </button>
               </div>
             </div>

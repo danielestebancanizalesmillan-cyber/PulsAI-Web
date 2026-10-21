@@ -29,13 +29,19 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // Filtrar mensajes que no tengan contenido real (por ejemplo mensajes vacíos de placeholder)
+        // Filtrar mensajes que tengan contenido de texto o imágenes adjuntas
         const validHistory = messages
-            .filter((m: any) => m && typeof m.content === "string" && m.content.trim().length > 0)
-            .map((m: any) => ({
-                role: m.role === "assistant" ? "assistant" : "user",
-                content: m.content.trim()
-            }));
+            .filter((m: any) => m && ((typeof m.content === "string" && m.content.trim().length > 0) || (Array.isArray(m.images) && m.images.length > 0)))
+            .map((m: any) => {
+                const msgObj: { role: string; content: string; images?: string[] } = {
+                    role: m.role === "assistant" ? "assistant" : "user",
+                    content: typeof m.content === "string" && m.content.trim().length > 0 ? m.content.trim() : (m.images?.length ? "¿Qué hay en esta imagen? Analízala con detalle." : "")
+                };
+                if (Array.isArray(m.images) && m.images.length > 0) {
+                    msgObj.images = m.images;
+                }
+                return msgObj;
+            });
 
         const lastUserMessage = validHistory.filter(m => m.role === "user").slice(-1)[0]?.content || "";
         let usedSources: SearchResult[] = [];
