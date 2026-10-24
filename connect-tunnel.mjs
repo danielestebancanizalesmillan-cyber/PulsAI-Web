@@ -43,12 +43,12 @@ async function publishTunnelUrl(url) {
 function startTunnel() {
     console.log("[PulsAI] Iniciando túnel hacia http://127.0.0.1:11435...");
     
-    // Ejecutar cloudflared con argumentos óptimos
+    // Ejecutar cloudflared con argumentos óptimos (usando http2 porque los puertos UDP/QUIC están bloqueados por el firewall/ISP)
     const tunnel = spawn(cloudflaredPath, [
         "tunnel", 
         "--url", "http://127.0.0.1:11435",
         "--no-autoupdate",
-        "--protocol", "quic"
+        "--protocol", "http2"
     ], {
         stdio: ["ignore", "pipe", "pipe"]
     });
