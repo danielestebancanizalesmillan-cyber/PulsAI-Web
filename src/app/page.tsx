@@ -234,8 +234,8 @@ export default function PulsAIApp() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const MAX_WIDTH = 1024;
-          const MAX_HEIGHT = 1024;
+          const MAX_WIDTH = 768;
+          const MAX_HEIGHT = 768;
           let width = img.width;
           let height = img.height;
 
@@ -260,8 +260,8 @@ export default function PulsAIApp() {
           }
 
           ctx.drawImage(img, 0, 0, width, height);
-          // Exportar en JPEG optimizado (0.82 de calidad)
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+          // Exportar en JPEG optimizado (0.75 de calidad) para inferencia visual instantánea
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
           const base64Data = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
 
           setAttachedImages(prev => [
